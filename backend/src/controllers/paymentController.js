@@ -3,7 +3,7 @@ import crypto from "crypto";
 import Payment from "../models/Payment.js";
 import Order from "../models/Order.js";
 import { sendOrderConfirmationEmail } from "../utils/sendEmail.js";
-import User from "../models/User.js"
+import User from "../models/User.js";
 
 export const createPaymentOrder = async (req, res) => {
   try {
@@ -14,7 +14,7 @@ export const createPaymentOrder = async (req, res) => {
     });
 
     const options = {
-      amount: amount * 100, // Razorpay expects amount in paise
+      amount: amount * 100,
       currency: "INR",
       receipt: orderId,
     };
@@ -26,8 +26,6 @@ export const createPaymentOrder = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
-
 
 export const verifyPayment = async (req, res) => {
   try {
@@ -43,7 +41,7 @@ export const verifyPayment = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid signature" });
     }
 
-    // Create Payment Record
+    // Save payment
     await Payment.create({
       orderId,
       paymentGateway: "Razorpay",
@@ -51,7 +49,7 @@ export const verifyPayment = async (req, res) => {
       status: "Success",
     });
 
-    // Update order to Paid and fetch userId
+    // Update order
     const order = await Order.findByIdAndUpdate(
       orderId,
       { status: "Paid", paymentId: razorpay_payment_id },
@@ -64,10 +62,14 @@ export const verifyPayment = async (req, res) => {
 
     const user = await User.findById(order.userId).select("email name");
 
+    // ✅ Make email non-blocking
     if (user?.email) {
-      await sendOrderConfirmationEmail(user.email, order);
+      sendOrderConfirmationEmail(user.email, order)
+        .then(() => console.log(`✅ Confirmation email sent to ${user.email}`))
+        .catch((err) => console.error("❌ Email send failed:", err.message));
     }
 
+    // ✅ Respond immediately
     res.json({ success: true });
   } catch (error) {
     console.error("Error verifying payment:", error);
