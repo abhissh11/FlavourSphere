@@ -9,58 +9,86 @@ export default function Checkout() {
 
   useEffect(() => {
     if (items.length === 0) {
-      // Optional: handle empty cart
+      // Optional: handle empty cart redirect
+      // navigate("/");
     }
   }, [items.length]);
 
   const payNow = async () => {
-    // 1️⃣ Create order in backend
-    const { data: order } = await API.post("/orders", {
-      items: items.map((i) => ({
-        productId: i._id,
-        name: i.name,
-        price: i.price,
-        quantity: i.quantity,
-      })),
-      amount: total,
-    });
+    try {
+      // 1️⃣ Create order in backend
+      const { data: order } = await API.post("/orders", {
+        items: items.map((i) => ({
+          productId: i._id,
+          name: i.name,
+          price: i.price,
+          quantity: i.quantity,
+        })),
+        amount: total,
+      });
 
-    // 2️⃣ Create payment order with Razorpay
-    const { data: paymentOrder } = await API.post("/payment/checkout", {
-      amount: total,
-      orderId: order._id,
-    });
+      // 2️⃣ Create Razorpay payment order
+      const { data: paymentOrder } = await API.post("/payment/checkout", {
+        amount: total,
+        orderId: order._id,
+      });
 
-    // 3️⃣ Configure Razorpay
-    const options = {
-      key: import.meta.env.VITE_RAZORPAY_KEY,
-      amount: paymentOrder.amount,
-      currency: "INR",
-      name: "Fruit Powders",
-      description: `Order #${order._id}`,
-      order_id: paymentOrder.id,
-      handler: async function (response) {
-        await API.post("/payment/verify", {
-          ...response,
-          orderId: order._id,
-        });
-        clearCart();
-        navigate("/confirmation");
-      },
-      theme: { color: "#16a34a" },
-    };
+      // 3️⃣ Configure Razorpay
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY,
+        amount: paymentOrder.amount,
+        currency: "INR",
+        name: "Fruit Powders",
+        description: `Order #${order._id}`,
+        order_id: paymentOrder.id,
 
-    if (!window.Razorpay) {
-      alert("Razorpay script not loaded");
-      return;
+        // ✅ Robust handler with verification, error handling & redirect
+        handler: async function (response) {
+          try {
+            const verifyRes = await API.post("/payment/verify", {
+              ...response,
+              orderId: order._id,
+            });
+
+            if (verifyRes.data.success) {
+              clearCart();
+              console.log("✅ Payment verified, redirecting to confirmation...");
+              navigate("/confirmation");
+            } else {
+              console.error("❌ Payment verification failed:", verifyRes.data);
+              alert("Payment verification failed. Please try again.");
+            }
+          } catch (err) {
+            console.error("❌ Error verifying payment:", err);
+            alert("Payment verification failed. Check console for details.");
+          }
+        },
+
+        theme: { color: "#16a34a" },
+      };
+
+      // 4️⃣ Open Razorpay window
+      if (!window.Razorpay) {
+        alert("Razorpay script not loaded. Please refresh the page.");
+        return;
+      }
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+
+      rzp.on("payment.failed", function (response) {
+        console.error("Payment failed:", response.error);
+        alert("Payment failed. Please try again.");
+      });
+
+    } catch (error) {
+      console.error("❌ Error initiating payment:", error);
+      alert("Something went wrong while starting payment. Try again later.");
     }
-    const rzp = new window.Razorpay(options);
-    rzp.open();
   };
 
   return (
     <div className="max-w-2xl mx-auto bg-white p-6 shadow mt-10 rounded space-y-6">
-
 
       {/* ✅ Checkout Section */}
       <div className="bg-white rounded p-4 shadow-inner">
@@ -91,6 +119,7 @@ export default function Checkout() {
           Pay Now
         </button>
       </div>
+
       {/* ✅ Test Card Info Section */}
       <div className="border border-green-200 rounded-lg p-4 bg-green-50">
         <h3 className="text-xl font-bold text-green-700 mb-3 text-center">
@@ -113,17 +142,13 @@ export default function Checkout() {
             <tbody className="bg-white text-center">
               <tr>
                 <td className="border px-4 py-2">Mastercard</td>
-                <td className="border px-4 py-2 font-mono">
-                  2305 3242 5784 8228
-                </td>
+                <td className="border px-4 py-2 font-mono">2305 3242 5784 8228</td>
                 <td className="border px-4 py-2">Any 3 digits</td>
                 <td className="border px-4 py-2">Any future date</td>
               </tr>
               <tr>
                 <td className="border px-4 py-2">Visa</td>
-                <td className="border px-4 py-2 font-mono">
-                  4386 2894 0766 0153
-                </td>
+                <td className="border px-4 py-2 font-mono">4386 2894 0766 0153</td>
                 <td className="border px-4 py-2">Any 3 digits</td>
                 <td className="border px-4 py-2">Any future date</td>
               </tr>
